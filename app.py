@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import plotly.graph_objects as go
 import requests
 import datetime
 from bs4 import BeautifulSoup
@@ -31,10 +30,14 @@ st.markdown("""
     object-fit: cover;
     border-radius: 10px;
     margin-bottom: 10px;
+    width: 100%;
 }
 .news-article {
     font-size: 14px;
     margin: 5px 0;
+}
+.sidebar-section {
+    padding: 10px 20px;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -48,7 +51,23 @@ Visualizing artist value through:
 - **Repeat Sales Market Index (RSMI)**
 """)
 
-# Function to fetch news data from NewsAPI.org
+# Sidebar info
+with st.sidebar:
+    st.header("About AXII Dashboard")
+    st.markdown("""
+    **Purpose:**  
+    To provide transparent, data-driven insights into contemporary artists’ market and cultural value by combining auction sales, social media engagement, and news coverage.
+    
+    **How it works:**  
+    - Data is aggregated from auction houses, Instagram engagement estimates, and news mentions.  
+    - Scores reflect an artist’s cultural capital, emotional engagement, and sales market performance.  
+    - Users can add new artists and explore their metrics dynamically.  
+    
+    **Created by:** Your Name  
+    (Add any other info here)
+    """)
+
+# Fetch news from NewsAPI.org
 def fetch_news_mentions(artist_name, api_key):
     url = (
         "https://newsapi.org/v2/everything?"
@@ -86,7 +105,7 @@ def fetch_auction_sales_score(artist_name):
         score = 50
     return score
 
-# Sample data with image URLs (add your own or fetch dynamically)
+# Sample data with image URLs
 data = {
     "Artist": ["Tschabalala Self", "Jordan Casteel", "Cao Fei"],
     "Image": [
@@ -100,10 +119,9 @@ data = {
     "News": [[], [], []]
 }
 
-# DataFrame
 df = pd.DataFrame(data)
 
-# Sidebar input
+# Sidebar inputs
 st.sidebar.header("Add New Artist")
 new_artist = st.sidebar.text_input("Artist Name")
 api_key = st.sidebar.text_input("NewsAPI Key", type="password")
@@ -113,7 +131,6 @@ if st.sidebar.button("Fetch & Add Artist"):
         cci_score, articles = fetch_news_mentions(new_artist, api_key)
         ees_score = simulate_instagram_engagement(new_artist)
         rsmi_score = fetch_auction_sales_score(new_artist)
-
         new_data = {
             "Artist": new_artist,
             "Image": "https://via.placeholder.com/300x150.png?text=Artist+Image",
@@ -123,39 +140,48 @@ if st.sidebar.button("Fetch & Add Artist"):
             "News": [articles]
         }
         df = pd.concat([df, pd.DataFrame([new_data])], ignore_index=True)
+    else:
+        st.sidebar.error("Please enter both artist name and NewsAPI key.")
 
-# Artist selection
+# Select artists to compare
 artists_selected = st.multiselect("Select artists to compare:", df["Artist"].tolist(), default=df["Artist"].tolist())
 filtered_df = df[df["Artist"].isin(artists_selected)]
 
-# Index breakdown (cards style)
-st.markdown("### Artist Scores")
-cols = st.columns(len(filtered_df))
-for idx, row in filtered_df.iterrows():
-    with cols[list(filtered_df.index).index(idx)]:
-        st.markdown(f"""
-        <div class="metric-card">
-            <img src="{row['Image']}" class="artist-image" />
-            <h3>{row['Artist']}</h3>
-            <p><b>CCI:</b> {row['Cultural Capital Index (CCI)']}</p>
-            <p><b>EES:</b> {row['Emotional Engagement Score (EES)']}</p>
-            <p><b>RSMI:</b> {row['Repeat Sales Market Index (RSMI)']}</p>
-        </div>
-        """, unsafe_allow_html=True)
+# Display artist cards if any selected
+if len(filtered_df) > 0:
+    cols = st.columns(len(filtered_df))
+    for idx, row in filtered_df.iterrows():
+        with cols[list(filtered_df.index).index(idx)]:
+            st.markdown(f"""
+            <div class="metric-card">
+                <img src="{row['Image']}" class="artist-image" />
+                <h3>{row['Artist']}</h3>
+                <p><b>CCI:</b> {row['Cultural Capital Index (CCI)']}</p>
+                <p><b>EES:</b> {row['Emotional Engagement Score (EES)']}</p>
+                <p><b>RSMI:</b> {row['Repeat Sales Market Index (RSMI)']}</p>
+            </div>
+            """, unsafe_allow_html=True)
+else:
+    st.warning("No artists selected. Please select at least one artist to display scores.")
 
-# Show News Articles
+# Show news articles for selected artists
 st.markdown("### Recent News Highlights")
 for idx, row in filtered_df.iterrows():
     st.subheader(row["Artist"])
     news_list = row.get("News", [])
-    if isinstance(news_list, list):
+    if isinstance(news_list, list) and news_list:
         for article in news_list:
             st.markdown(f"<div class='news-article'>🔹 <a href='{article['url']}' target='_blank'>{article['title']}</a></div>", unsafe_allow_html=True)
     else:
         st.write("No articles available.")
 
-# Radar chart
-melted = filtered_df.melt(id_vars=["Artist"], value_vars=["Cultural Capital Index (CCI)", "Emotional Engagement Score (EES)", "Repeat Sales Market Index (RSMI)"], var_name="Index", value_name="Score")
+# Radar chart visualization
+melted = filtered_df.melt(
+    id_vars=["Artist"], 
+    value_vars=["Cultural Capital Index (CCI)", "Emotional Engagement Score (EES)", "Repeat Sales Market Index (RSMI)"], 
+    var_name="Index", value_name="Score"
+)
+
 fig = px.line_polar(
     melted,
     r="Score",
@@ -167,6 +193,6 @@ fig = px.line_polar(
 fig.update_traces(fill='toself')
 st.plotly_chart(fig, use_container_width=True)
 
-# Table
+# Raw data table
 st.subheader("Raw AXII Data")
 st.dataframe(filtered_df.set_index("Artist"))
