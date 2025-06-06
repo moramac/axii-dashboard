@@ -3,6 +3,7 @@ import pandas as pd
 import plotly.express as px
 import requests
 import datetime
+from bs4 import BeautifulSoup
 
 # Page config
 st.set_page_config(page_title="AXII Artist Dashboard", layout="centered")
@@ -30,11 +31,27 @@ def fetch_news_mentions(artist_name, api_key):
 def simulate_instagram_engagement(artist_name):
     return hash(artist_name) % 30 + 60  # Mock score between 60 and 90
 
-# Function to simulate auction sales score
-def simulate_auction_sales(artist_name):
-    return hash(artist_name[::-1]) % 40 + 50  # Mock score between 50 and 90
+# Function to scrape auction sales data (Phillips example)
+def fetch_auction_sales_score(artist_name):
+    try:
+        query = artist_name.replace(" ", "+")
+        url = f"https://www.phillips.com/search?search={query}"
+        headers = {"User-Agent": "Mozilla/5.0"}
+        response = requests.get(url, headers=headers)
+        soup = BeautifulSoup(response.text, 'html.parser')
 
-# Mock AXII data for 3 artists
+        # Extract estimated number of auction results for artist (simplified logic)
+        results_text = soup.find('span', class_='search-results-count')
+        if results_text:
+            count = int(''.join(filter(str.isdigit, results_text.text)))
+            score = min(count // 5, 100)  # Normalize to 0–100 scale
+        else:
+            score = 50
+    except:
+        score = 50
+    return score
+
+# Initial AXII data for a few artists
 data = {
     "Artist": ["Tschabalala Self", "Jordan Casteel", "Cao Fei"],
     "Cultural Capital Index (CCI)": [82, 77, 90],
@@ -54,7 +71,7 @@ if st.sidebar.button("Fetch & Add Artist"):
     if new_artist and api_key:
         cci_score = fetch_news_mentions(new_artist, api_key)
         ees_score = simulate_instagram_engagement(new_artist)
-        rsmi_score = simulate_auction_sales(new_artist)
+        rsmi_score = fetch_auction_sales_score(new_artist)
 
         new_data = {
             "Artist": new_artist,
