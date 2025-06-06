@@ -2,8 +2,8 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import requests
-from bs4 import BeautifulSoup
 import datetime
+from bs4 import BeautifulSoup
 
 # Page config
 st.set_page_config(page_title="AXII Artist Dashboard", layout="wide")
@@ -25,27 +25,15 @@ st.markdown("""
     text-align: center;
     margin: 10px;
 }
-.artist-image, .sidebar-artist-image {
+.artist-image {
     max-height: 150px;
-    max-width: 150px;
-    object-fit: contain;
+    object-fit: cover;
     border-radius: 10px;
     margin-bottom: 10px;
-    display: block;
-    margin-left: auto;
-    margin-right: auto;
 }
 .news-article {
     font-size: 14px;
     margin: 5px 0;
-}
-.sidebar-artist {
-    display: flex;
-    align-items: center;
-    margin-bottom: 10px;
-}
-.sidebar-artist img {
-    margin-right: 10px;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -59,26 +47,45 @@ Visualizing artist value through:
 - **Repeat Sales Market Index (RSMI)**
 """)
 
-def fetch_trending_artnet():
-    url = "https://www.artnet.com/artists/"
-    headers = {"User-Agent": "Mozilla/5.0"}
+# Function to fetch news data from NewsAPI.org
+def fetch_news_mentions(artist_name, api_key):
+    url = (
+        "https://newsapi.org/v2/everything?"
+        f"q=\"{artist_name}\"&from={datetime.date.today().isoformat()}&sortBy=relevancy&pageSize=5&apiKey={api_key}"
+    )
     try:
-        resp = requests.get(url, headers=headers, timeout=10)
-        soup = BeautifulSoup(resp.text, "html.parser")
-        # Artnet trending artists are inside elements like <a> under trending sections, but the exact selector may vary:
-        # Example selector (adjust if needed):
-        anchors = soup.select("div.TrendingArtistsList a")  # adjust selector if website changes
-        artists = []
-        for a in anchors:
-            name = a.get_text(strip=True)
-            if name and name not in artists:
-                artists.append(name)
-        return artists[:10]
-    except Exception as e:
-        st.error(f"Failed to fetch trending artists from Artnet: {e}")
-        return []
+        response = requests.get(url)
+        response.raise_for_status()
+        results = response.json()
+        articles = results.get("articles", [])
+        score = min(len(articles) * 10, 100)
+        return score, articles
+    except:
+        return 50, []
 
-# Wikipedia API to get artist image URL
+# Simulate Instagram engagement score
+def simulate_instagram_engagement(artist_name):
+    return hash(artist_name) % 30 + 60
+
+# Scrape auction sales from Phillips
+def fetch_auction_sales_score(artist_name):
+    try:
+        query = artist_name.replace(" ", "+")
+        url = f"https://www.phillips.com/search?search={query}"
+        headers = {"User-Agent": "Mozilla/5.0"}
+        response = requests.get(url, headers=headers)
+        soup = BeautifulSoup(response.text, 'html.parser')
+        results_text = soup.find('span', class_='search-results-count')
+        if results_text:
+            count = int(''.join(filter(str.isdigit, results_text.text)))
+            score = min(count // 5, 100)
+        else:
+            score = 50
+    except:
+        score = 50
+    return score
+
+# Function to fetch Wikipedia image for artist
 def fetch_wikipedia_image(artist_name):
     search_url = f"https://en.wikipedia.org/w/api.php?action=query&format=json&prop=pageimages&piprop=original&titles={artist_name}"
     try:
@@ -87,14 +94,13 @@ def fetch_wikipedia_image(artist_name):
         pages = data['query']['pages']
         for page_id in pages:
             page = pages[page_id]
-            if "original" in page:
+            if "original" in page and page["original"].get("source"):
                 return page["original"]["source"]
-    except:
+    except Exception:
         pass
-    # fallback placeholder
-    return "https://via.placeholder.com/150?text=No+Image"
+    return None
 
-# Sample AXII data - replace with your real or API data
+# Sample data with image URLs (add your own or fetch dynamically)
 data = {
     "Artist": ["Tschabalala Self", "Jordan Casteel", "Cao Fei"],
     "Image": [
@@ -107,34 +113,57 @@ data = {
     "Repeat Sales Market Index (RSMI)": [65, 70, 68],
     "News": [[], [], []]
 }
+
+# DataFrame
 df = pd.DataFrame(data)
 
-# Fetch trending artists from Artnet
-trending_artists = fetch_trending_artnet()
+# Sidebar input
+st.sidebar.header("Add New Artist")
+new_artist = st.sidebar.text_input("Artist Name")
+api_key = st.sidebar.text_input("NewsAPI Key", type="password")
+
+if st.sidebar.button("Fetch & Add Artist"):
+    if new_artist and api_key:
+        cci_score, articles = fetch_news_mentions(new_artist, api_key)
+        ees_score = simulate_instagram_engagement(new_artist)
+        rsmi_score = fetch_auction_sales_score(new_artist)
+
+        new_data = {
+            "Artist": new_artist,
+            "Image": fetch_wikipedia_image(new_artist) or "https://via.placeholder.com/300x150.png?text=Artist+Image",
+            "Cultural Capital Index (CCI)": cci_score,
+            "Emotional Engagement Score (EES)": ees_score,
+            "Repeat Sales Market Index (RSMI)": rsmi_score,
+            "News": [articles]
+        }
+        df = pd.concat([df, pd.DataFrame([new_data])], ignore_index=True)
+
+# Fetch Artnet trending artists (you can replace this list with your actual scraped data)
+trending_artists = ["Tschabalala Self", "Jordan Casteel", "Cao Fei"]
 
 st.sidebar.markdown("### 🔥 Trending on Artnet")
+
 for artist in trending_artists:
     img_url = fetch_wikipedia_image(artist)
-    st.sidebar.markdown(f"""
-    <div class="sidebar-artist">
-        <img src="{img_url}" class="sidebar-artist-image" alt="{artist} image" />
-        <div>{artist}</div>
-    </div>
-    """, unsafe_allow_html=True)
+    if not img_url:
+        img_url = "https://via.placeholder.com/150?text=No+Image"
+    try:
+        st.sidebar.image(img_url, width=100, caption=artist)
+    except Exception:
+        st.sidebar.write(f"{artist} (Image failed to load)")
 
-# Artist selection widget including trending artists
-all_artists = list(set(df["Artist"].tolist() + trending_artists))
-artists_selected = st.multiselect("Select artists to compare:", all_artists, default=df["Artist"].tolist())
+# Artist selection
+artists_selected = st.multiselect("Select artists to compare:", df["Artist"].tolist(), default=df["Artist"].tolist())
 filtered_df = df[df["Artist"].isin(artists_selected)]
 
-# Display artist scorecards
+# Index breakdown (cards style)
 st.markdown("### Artist Scores")
-cols = st.columns(len(filtered_df)) if len(filtered_df) > 0 else []
+cols = st.columns(len(filtered_df))
 for idx, row in filtered_df.iterrows():
     with cols[list(filtered_df.index).index(idx)]:
         st.markdown(f"""
         <div class="metric-card">
-            <img src="{row['Image']}" class="artist-image" alt="{row['Artist']} image"/>
+            <img src="{row['Image']}" class="artist-image" />
             <h3>{row['Artist']}</h3>
             <p><b>CCI:</b> {row['Cultural Capital Index (CCI)']}</p>
             <p><b>EES:</b> {row['Emotional Engagement Score (EES)']}</p>
@@ -142,25 +171,30 @@ for idx, row in filtered_df.iterrows():
         </div>
         """, unsafe_allow_html=True)
 
-# Radar chart
-if not filtered_df.empty:
-    melted = filtered_df.melt(
-        id_vars=["Artist"],
-        value_vars=["Cultural Capital Index (CCI)", "Emotional Engagement Score (EES)", "Repeat Sales Market Index (RSMI)"],
-        var_name="Index",
-        value_name="Score"
-    )
-    fig = px.line_polar(
-        melted,
-        r="Score",
-        theta="Index",
-        color="Artist",
-        line_close=True,
-        title="AXII Index Radar"
-    )
-    fig.update_traces(fill='toself')
-    st.plotly_chart(fig, use_container_width=True)
+# Show News Articles
+st.markdown("### Recent News Highlights")
+for idx, row in filtered_df.iterrows():
+    st.subheader(row["Artist"])
+    news_list = row.get("News", [])
+    if isinstance(news_list, list):
+        for article in news_list:
+            st.markdown(f"<div class='news-article'>🔹 <a href='{article['url']}' target='_blank'>{article['title']}</a></div>", unsafe_allow_html=True)
+    else:
+        st.write("No articles available.")
 
-# Raw data table
+# Radar chart
+melted = filtered_df.melt(id_vars=["Artist"], value_vars=["Cultural Capital Index (CCI)", "Emotional Engagement Score (EES)", "Repeat Sales Market Index (RSMI)"], var_name="Index", value_name="Score")
+fig = px.line_polar(
+    melted,
+    r="Score",
+    theta="Index",
+    color="Artist",
+    line_close=True,
+    title="AXII Index Radar"
+)
+fig.update_traces(fill='toself')
+st.plotly_chart(fig, use_container_width=True)
+
+# Table
 st.subheader("Raw AXII Data")
 st.dataframe(filtered_df.set_index("Artist"))
