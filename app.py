@@ -1,15 +1,42 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import requests
 import datetime
 from bs4 import BeautifulSoup
 
 # Page config
-st.set_page_config(page_title="AXII Artist Dashboard", layout="centered")
+st.set_page_config(page_title="AXII Artist Dashboard", layout="wide")
 
-st.title("AXII Artist Intelligence Dashboard")
-st.markdown("Visualizing artist value through Cultural Capital, Emotional Engagement, and Market Indices.")
+st.markdown("""
+<style>
+.big-title {
+    font-size: 50px;
+    font-weight: bold;
+    text-align: center;
+    color: #3C3C3C;
+    padding-top: 20px;
+}
+.metric-card {
+    background-color: #f9f9f9;
+    padding: 20px;
+    border-radius: 15px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.05);
+    text-align: center;
+    margin: 10px;
+}
+</style>
+""", unsafe_allow_html=True)
+
+st.markdown('<div class="big-title">AXII Artist Intelligence Dashboard</div>', unsafe_allow_html=True)
+
+st.markdown("""
+Visualizing artist value through:
+- **Cultural Capital Index (CCI)**
+- **Emotional Engagement Score (EES)**
+- **Repeat Sales Market Index (RSMI)**
+""")
 
 # Function to fetch news count from NewsAPI.org
 def fetch_news_mentions(artist_name, api_key):
@@ -22,16 +49,16 @@ def fetch_news_mentions(artist_name, api_key):
         response.raise_for_status()
         results = response.json()
         total = results.get("totalResults", 0)
-        score = min(total // 2, 100)  # Normalize to 0–100 scale
+        score = min(total // 2, 100)
     except:
         score = 50
     return score
 
-# Function to simulate Instagram engagement score
+# Simulate Instagram engagement score
 def simulate_instagram_engagement(artist_name):
-    return hash(artist_name) % 30 + 60  # Mock score between 60 and 90
+    return hash(artist_name) % 30 + 60
 
-# Function to scrape auction sales data (Phillips example)
+# Scrape auction sales from Phillips
 def fetch_auction_sales_score(artist_name):
     try:
         query = artist_name.replace(" ", "+")
@@ -39,19 +66,17 @@ def fetch_auction_sales_score(artist_name):
         headers = {"User-Agent": "Mozilla/5.0"}
         response = requests.get(url, headers=headers)
         soup = BeautifulSoup(response.text, 'html.parser')
-
-        # Extract estimated number of auction results for artist (simplified logic)
         results_text = soup.find('span', class_='search-results-count')
         if results_text:
             count = int(''.join(filter(str.isdigit, results_text.text)))
-            score = min(count // 5, 100)  # Normalize to 0–100 scale
+            score = min(count // 5, 100)
         else:
             score = 50
     except:
         score = 50
     return score
 
-# Initial AXII data for a few artists
+# Sample data
 data = {
     "Artist": ["Tschabalala Self", "Jordan Casteel", "Cao Fei"],
     "Cultural Capital Index (CCI)": [82, 77, 90],
@@ -62,7 +87,7 @@ data = {
 # DataFrame
 df = pd.DataFrame(data)
 
-# User input for new artist
+# Sidebar input
 st.sidebar.header("Add New Artist")
 new_artist = st.sidebar.text_input("Artist Name")
 api_key = st.sidebar.text_input("NewsAPI Key", type="password")
@@ -81,28 +106,37 @@ if st.sidebar.button("Fetch & Add Artist"):
         }
         df = pd.concat([df, pd.DataFrame([new_data])], ignore_index=True)
 
-# Select artist(s)
+# Artist selection
 artists_selected = st.multiselect("Select artists to compare:", df["Artist"].tolist(), default=df["Artist"].tolist())
-
-# Filter data
 filtered_df = df[df["Artist"].isin(artists_selected)]
 
-# Melt data for radar chart
-melted = filtered_df.melt(id_vars=["Artist"], var_name="Index", value_name="Score")
+# Index breakdown (cards style)
+st.markdown("### Artist Scores")
+cols = st.columns(len(filtered_df))
+for idx, row in filtered_df.iterrows():
+    with cols[list(filtered_df.index).index(idx)]:
+        st.markdown(f"""
+        <div class="metric-card">
+            <h3>{row['Artist']}</h3>
+            <p><b>CCI:</b> {row['Cultural Capital Index (CCI)']}</p>
+            <p><b>EES:</b> {row['Emotional Engagement Score (EES)']}</p>
+            <p><b>RSMI:</b> {row['Repeat Sales Market Index (RSMI)']}</p>
+        </div>
+        """, unsafe_allow_html=True)
 
 # Radar chart
+melted = filtered_df.melt(id_vars=["Artist"], var_name="Index", value_name="Score")
 fig = px.line_polar(
     melted,
     r="Score",
     theta="Index",
     color="Artist",
     line_close=True,
-    title="AXII Index Comparison"
+    title="AXII Index Radar"
 )
 fig.update_traces(fill='toself')
+st.plotly_chart(fig, use_container_width=True)
 
-st.plotly_chart(fig)
-
-# Display table
+# Table
 st.subheader("Raw AXII Data")
 st.dataframe(filtered_df.set_index("Artist"))
